@@ -148,10 +148,12 @@ class Spider:
             stype = "mieszkania-wynajem"
         elif Spider.scan_type == "Mieszkania na sprzedaż":
             stype = "mieszkania-sprzedaz"
+        elif Spider.scan_type == "Mieszkania":
+            stype = "mieszkania"
 
         cls.csv_file_path = f"{OUTPUT_DIR}/{OUTPUT_FILE_PFX}_{stype}.csv"
 
-        csv_header = '"Lp";"Adm1";"Adm2";"Ulica";"Cena";"Powierzchnia użytkowa";"Powierzchnia mieszkalna";"Liczba pokoi";"Rok budowy";"Piętro";"Typ budynku";"Winda";"Miejsca parkingowe";"Stan budynku";"Stan nieruchomości";"GPSX";"GPSY";"Url";"Zdjęcie"'
+        csv_header = '"Lp";"Adm1";"Adm2";"Ulica";"Rynek pierwotny";"Cena";"Powierzchnia użytkowa";"Powierzchnia mieszkalna";"Liczba pokoi";"Rok budowy";"Piętro";"Typ budynku";"Winda";"Miejsca parkingowe";"Stan budynku";"Stan nieruchomości";"GPSX";"GPSY";"Url";"Zdjęcie"'
 
         with open(cls.csv_file_path, mode="w", encoding="utf8") as f:
 
@@ -174,6 +176,7 @@ class Offer:
     adm_1 = None
     adm_2 = None
     street = None
+    primary_market = None
     area = None
     rooms = None
     living_area = None
@@ -199,6 +202,7 @@ class Offer:
         line += '"' + (self.adm_1 if self.adm_1 is not None else '') + '";'
         line += '"' + (self.adm_2 if self.adm_2 is not None else '') + '";'
         line += '"' + (self.street if self.street is not None else '') + '";'
+        line += '"' + (self.primary_market if self.primary_market is not None else '') + '";'
         line += '"' + (self.price if self.price is not None else '') + '";'
         line += '"' + (self.area if self.area is not None else '') + '";'
         line += '"' + (self.living_area if self.living_area is not None else '') + '";'
@@ -269,13 +273,15 @@ def mp_parse_offers(i, q_offers_html, q_offers_objs):
         if "null" in h_street_str:
             offer.street = None
         else:
-            offer.street = h_street_str.split('"')[3].encode().decode("unicode_escape")
+            offer.street = h_street_str.split('"')[3].encode().decode("unicode_escape").strip()
 
     h_params = soup.find_all("div", {"class": "paramsItem"})
 
     for v in h_params:
         if "Cena:" in v.text:
             offer.price = v.find("strong").text.replace(u'\xa0', u' ')
+        elif "Rynek pierwotny:" in v.text:
+            offer.primary_market = v.find("strong").text
         elif "Powierzchnia użytkowa:" in v.text:
             offer.area = v.find("strong").text
         elif "Powierzchnia mieszkalna:" in v.text:
@@ -313,7 +319,7 @@ if __name__ == '__main__':
 
     # Spider.root_url = input("Adres startowy: ")
 
-    Spider.root_url = "https://domy.pl/mieszkania-wynajem-mazowieckie+warszawa+mokotow-pl?ps%5Badvanced_search%5D=0&ps%5Bsort_order%5D=rank&ps%5Blocation%5D%5Btype%5D=1&ps%5Btransaction%5D=2&ps%5Btype%5D=1&ps%5Blocation%5D%5Btext_queue%5D%5B%5D=mazowieckie+Warszawa+Mokot%C3%B3w&ps%5Blocation%5D%5Btext_tmp_queue%5D%5B%5D=mazowieckie+Warszawa+Mokot%C3%B3w&ps[living_area_from]=150"
+    Spider.root_url = "https://domy.pl/inwestycje/szukaj?ps%5Btype%5D=998&ps%5Badvanced_search%5D=1&ps%5Blocation%5D%5Btype%5D=1&ps%5Bsub_type%5D=1&ps%5Blocation%5D%5Btext_queue%5D%5B%5D=mazowieckie+Warszawa+Mokot%C3%B3w&ps%5Blocation%5D%5Btext_tmp_queue%5D%5B%5D=mazowieckie+Warszawa+Mokot%C3%B3w&ps%5Bliving_area_from%5D=80&ps%5Bcompletion_date_to_month%5D=12&ps%5Bcompletion_date_to_year%5D=2022"
 
     if not Spider.root_url.startswith("https://domy.pl/"):
         print("Niepoprawny adres startowy; powinien zaczynac sie od https://domy.pl/")
