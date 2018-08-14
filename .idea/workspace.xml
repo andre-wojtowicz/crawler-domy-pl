@@ -4,6 +4,7 @@
     <list default="true" id="8ab50c7f-de47-4db1-9fa2-c7069e787030" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/crawl.py" beforeDir="false" afterPath="$PROJECT_DIR$/crawl.py" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -12,7 +13,7 @@
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="CoverageDataManager">
-    <SUITE FILE_PATH="coverage/crawler_domy_pl$crawl.coverage" NAME="crawl Coverage Results" MODIFIED="1534263517178" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/crawler_domy_pl$crawl.coverage" NAME="crawl Coverage Results" MODIFIED="1534274082055" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/crawler_domy_pl$test.coverage" NAME="test Coverage Results" MODIFIED="1534181944982" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/crawler_domy_pl$test2.coverage" NAME="test2 Coverage Results" MODIFIED="1534180777441" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
@@ -38,13 +39,13 @@
       </usages-collector>
       <usages-collector id="statistics.file.extensions.edit">
         <counts>
-          <entry key="Python Console" value="755" />
-          <entry key="py" value="4914" />
+          <entry key="Python Console" value="1783" />
+          <entry key="py" value="5954" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.types.edit">
         <counts>
-          <entry key="Python" value="5669" />
+          <entry key="Python" value="7737" />
         </counts>
       </usages-collector>
     </session>
@@ -54,17 +55,18 @@
       <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/crawl.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="153">
-              <caret line="236" column="20" selection-start-line="236" selection-start-column="20" selection-end-line="236" selection-end-column="20" />
+            <state relative-caret-position="206">
+              <caret line="151" column="8" selection-start-line="151" selection-start-column="8" selection-end-line="151" selection-end-column="8" />
               <folding>
                 <element signature="e#0#15#0" expanded="true" />
-                <marker date="1534263572130" expanded="true" signature="875:5211" ph="..." />
-                <marker date="1534263572130" expanded="true" signature="876:881" ph="..." />
-                <marker date="1534263572130" expanded="true" signature="1790:1838" ph="..." />
-                <marker date="1534263572130" expanded="true" signature="2285:2291" ph="..." />
-                <marker date="1534263572130" expanded="true" signature="3753:4155" ph="..." />
-                <marker date="1534263572130" expanded="true" signature="4446:5089" ph="..." />
-                <marker date="1534263572130" expanded="true" signature="4718:5089" ph="..." />
+                <marker date="1534273890924" expanded="true" signature="925:10047" ph="..." />
+                <marker date="1534273890924" expanded="true" signature="926:931" ph="..." />
+                <marker date="1534273890924" expanded="true" signature="1840:1888" ph="..." />
+                <marker date="1534273890924" expanded="true" signature="2335:2341" ph="..." />
+                <marker date="1534273890924" expanded="true" signature="4035:4664" ph="..." />
+                <marker date="1534273890924" expanded="true" signature="4785:6801" ph="..." />
+                <marker date="1534273890924" expanded="true" signature="7092:9925" ph="..." />
+                <marker date="1534273890924" expanded="true" signature="7364:9925" ph="..." />
               </folding>
             </state>
           </provider>
@@ -107,6 +109,7 @@
   <component name="FindInProjectRecents">
     <findStrings>
       <find>rand_string</find>
+      <find>re.</find>
     </findStrings>
   </component>
   <component name="Git.Settings">
@@ -180,7 +183,7 @@
     <property name="last_opened_file_path" value="C:/Program Files/Microsoft/R Open/R-3.4.4/bin/x64/R.exe" />
     <property name="nodejs_interpreter_path.stuck_in_default_project" value="undefined stuck path" />
     <property name="nodejs_npm_path_reset_for_default_project" value="true" />
-    <property name="settings.editor.selected.configurable" value="com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable" />
+    <property name="settings.editor.selected.configurable" value="preferences.keymap" />
   </component>
   <component name="PyConsoleOptionsProvider">
     <option name="myShowDebugConsoleByDefault" value="true" />
@@ -376,17 +379,18 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/crawl.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="153">
-          <caret line="236" column="20" selection-start-line="236" selection-start-column="20" selection-end-line="236" selection-end-column="20" />
+        <state relative-caret-position="206">
+          <caret line="151" column="8" selection-start-line="151" selection-start-column="8" selection-end-line="151" selection-end-column="8" />
           <folding>
             <element signature="e#0#15#0" expanded="true" />
-            <marker date="1534263572130" expanded="true" signature="875:5211" ph="..." />
-            <marker date="1534263572130" expanded="true" signature="876:881" ph="..." />
-            <marker date="1534263572130" expanded="true" signature="1790:1838" ph="..." />
-            <marker date="1534263572130" expanded="true" signature="2285:2291" ph="..." />
-            <marker date="1534263572130" expanded="true" signature="3753:4155" ph="..." />
-            <marker date="1534263572130" expanded="true" signature="4446:5089" ph="..." />
-            <marker date="1534263572130" expanded="true" signature="4718:5089" ph="..." />
+            <marker date="1534273890924" expanded="true" signature="925:10047" ph="..." />
+            <marker date="1534273890924" expanded="true" signature="926:931" ph="..." />
+            <marker date="1534273890924" expanded="true" signature="1840:1888" ph="..." />
+            <marker date="1534273890924" expanded="true" signature="2335:2341" ph="..." />
+            <marker date="1534273890924" expanded="true" signature="4035:4664" ph="..." />
+            <marker date="1534273890924" expanded="true" signature="4785:6801" ph="..." />
+            <marker date="1534273890924" expanded="true" signature="7092:9925" ph="..." />
+            <marker date="1534273890924" expanded="true" signature="7364:9925" ph="..." />
           </folding>
         </state>
       </provider>

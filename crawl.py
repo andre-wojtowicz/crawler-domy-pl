@@ -1,5 +1,6 @@
 import datetime
 import multiprocessing
+import os
 import re
 import requests
 
@@ -9,10 +10,10 @@ import progressbar
 # ______________________________________________________________________________________________________________________
 
 OUTPUT_DIR = "output"
+IMG_DIR = "img"
 OUTPUT_FILE_PFX = str(datetime.datetime.now())[:19].replace(":", "").replace(" ", "_")
 OFFERS_PER_PAGE = 75  # 25, 50, 75
 CHECKIP_URL = "http://checkip.dyn.com"
-
 
 # ______________________________________________________________________________________________________________________
 
@@ -32,6 +33,7 @@ class Spider:
     lo_offers_objs = None
     pb = None
     pb_val = 0
+    csv_file_path = None
 
     @classmethod
     def scan_root_url(cls):
@@ -125,13 +127,41 @@ class Spider:
         cls.pb_val = 0
 
         for i in range(cls.lo_offers_html.qsize()):
-            pool.apply_async(mp_parse_offers, (i + 1, cls.lo_offers_html, cls.lo_offers_objs),
-                             callback=cls.__pb_update)
+           pool.apply_async(mp_parse_offers, (i + 1, cls.lo_offers_html, cls.lo_offers_objs),
+                            callback=cls.__pb_update)
 
         pool.close()
         pool.join()
 
         cls.pb.finish()
+
+    @classmethod
+    def save_csv(cls):
+
+        try:
+            os.mkdir(OUTPUT_DIR)
+        except FileExistsError:
+            pass
+
+        stype = "inne"
+        if Spider.scan_type == "Mieszkania do wynajęcia":
+            stype = "mieszkania-wynajem"
+        elif Spider.scan_type == "Mieszkania na sprzedaż":
+            stype = "mieszkania-sprzedaz"
+
+        cls.csv_file_path = f"{OUTPUT_DIR}/{OUTPUT_FILE_PFX}_{stype}.csv"
+
+        csv_header = '"Lp";"Adm1";"Adm2";"Ulica";"Cena";"Powierzchnia użytkowa";"Powierzchnia mieszkalna";"Liczba pokoi";"Rok budowy";"Piętro";"Typ budynku";"Winda";"Miejsca parkingowe";"Stan budynku";"Stan nieruchomości";"GPSX";"GPSY";"Url";"Zdjęcie"'
+
+        with open(cls.csv_file_path, mode="w", encoding="utf8") as f:
+
+            f.write(csv_header + '\n')
+
+            i = 1
+            while cls.lo_offers_objs.qsize() > 0:
+                o = cls.lo_offers_objs.get()
+                f.write(o.csv_line(i) + '\n')
+                i += 1
 
     @classmethod
     def __pb_update(cls, result):
@@ -141,8 +171,8 @@ class Spider:
 
 
 class Offer:
-    city = None
-    district = None
+    adm_1 = None
+    adm_2 = None
     street = None
     area = None
     rooms = None
@@ -152,6 +182,7 @@ class Offer:
     floor = None
     type_of_building = None
     lift = None
+    state_of_building = None
     state_of_property = None
     parking_space = None
     gps_x = None
@@ -162,6 +193,29 @@ class Offer:
     def __init__(self, url):
         self.url = url
 
+    def csv_line(self, i):
+
+        line = '"' + str(i) + '";'
+        line += '"' + (self.adm_1 if self.adm_1 is not None else '') + '";'
+        line += '"' + (self.adm_2 if self.adm_2 is not None else '') + '";'
+        line += '"' + (self.street if self.street is not None else '') + '";'
+        line += '"' + (self.price if self.price is not None else '') + '";'
+        line += '"' + (self.area if self.area is not None else '') + '";'
+        line += '"' + (self.living_area if self.living_area is not None else '') + '";'
+        line += '"' + (self.rooms if self.rooms is not None else '') + '";'
+        line += '"' + (self.year_of_construction if self.year_of_construction is not None else '') + '";'
+        line += '"' + (self.floor if self.floor is not None else '') + '";'
+        line += '"' + (self.type_of_building if self.type_of_building is not None else '') + '";'
+        line += '"' + (self.lift if self.lift is not None else '') + '";'
+        line += '"' + (self.parking_space if self.parking_space is not None else '') + '";'
+        line += '"' + (self.state_of_building if self.state_of_building is not None else '') + '";'
+        line += '"' + (self.state_of_property if self.state_of_property is not None else '') + '";'
+        line += '"' + (self.gps_x if self.gps_x is not None else '') + '";'
+        line += '"' + (self.gps_y if self.gps_y is not None else '') + '";'
+        line += '"' + (self.url if self.url is not None else '') + '";'
+        line += '"' + (self.photo_prefix if self.photo_prefix is not None else '') + '"'
+
+        return line
 
 # ______________________________________________________________________________________________________________________
 
@@ -194,7 +248,61 @@ def mp_parse_offers(i, q_offers_html, q_offers_objs):
 
     soup = BeautifulSoup(r_content, features="html.parser")
 
-    objs = soup.find_all("a", {'class': 'property_link'})
+    #h_location = soup.find("h1").find("strong").text.split(",")
+    #
+    #offer.adm_1 = h_location[0].strip() if len(h_location) > 0 else None
+    #offer.adm_2 = h_location[1].strip() if len(h_location) > 1 else None
+    #offer.street = h_location[-1].strip() if len(h_location) >= 3 else None
+
+    h_location = soup.find_all("span", {'typeof': 'v:Breadcrumb'})
+
+    offer.adm_1 = h_location[4].find("a").text
+    offer.adm_2 = h_location[5].find("a").text
+
+    h_street = re.search('"street":.*?,', soup.prettify())
+
+    if h_street is None:
+        offer.street = None
+    else:
+        h_street_str = re.search('"street":.*?,', soup.prettify()).group(0)
+
+        if "null" in h_street_str:
+            offer.street = None
+        else:
+            offer.street = h_street_str.split('"')[3].encode().decode("unicode_escape")
+
+    h_params = soup.find_all("div", {"class": "paramsItem"})
+
+    for v in h_params:
+        if "Cena:" in v.text:
+            offer.price = v.find("strong").text.replace(u'\xa0', u' ')
+        elif "Powierzchnia użytkowa:" in v.text:
+            offer.area = v.find("strong").text
+        elif "Powierzchnia mieszkalna:" in v.text:
+            offer.living_area = v.find("strong").text
+        elif "Liczba pokoi:" in v.text:
+            offer.rooms = v.find("strong").text
+        elif "Rok budowy:" in v.text:
+            offer.year_of_construction = v.find("strong").text
+        elif "Piętro:" in v.text:
+            offer.floor = v.find("strong").text
+        elif "Typ budynku:" in v.text:
+            offer.type_of_building = v.find("strong").text
+        elif "Winda:" in v.text:
+            offer.lift = v.find("strong").text
+        elif "Miejsca parkingowe:" in v.text:
+            offer.parking_space = v.find("strong").text
+        elif "Stan budynku:" in v.text:
+            offer.state_of_building = v.find("strong").text
+        elif "Stan nieruchomości:" in v.text:
+            offer.state_of_property = v.find("strong").text
+
+    google_maps = soup.find("div", {"class" : "GoogleMap"})
+
+    offer.gps_x = google_maps.get("data-lat") if google_maps is not None else None
+    offer.gps_y = google_maps.get("data-lng") if google_maps is not None else None
+
+    offer.photo_prefix = link.split("/")[-1]
 
     q_offers_objs.put(offer)
 
@@ -205,7 +313,7 @@ if __name__ == '__main__':
 
     # Spider.root_url = input("Adres startowy: ")
 
-    Spider.root_url = "https://domy.pl/mieszkania-wynajem-mazowieckie+warszawa+mokotow-pl?ps%5Badvanced_search%5D=0&ps%5Bsort_order%5D=rank&ps%5Blocation%5D%5Btype%5D=1&ps%5Btransaction%5D=2&ps%5Btype%5D=1&ps%5Blocation%5D%5Btext_queue%5D%5B%5D=mazowieckie+Warszawa+Mokot%C3%B3w&ps%5Blocation%5D%5Btext_tmp_queue%5D%5B%5D=mazowieckie+Warszawa+Mokot%C3%B3w&ps[living_area_from]=250"
+    Spider.root_url = "https://domy.pl/mieszkania-wynajem-mazowieckie+warszawa+mokotow-pl?ps%5Badvanced_search%5D=0&ps%5Bsort_order%5D=rank&ps%5Blocation%5D%5Btype%5D=1&ps%5Btransaction%5D=2&ps%5Btype%5D=1&ps%5Blocation%5D%5Btext_queue%5D%5B%5D=mazowieckie+Warszawa+Mokot%C3%B3w&ps%5Blocation%5D%5Btext_tmp_queue%5D%5B%5D=mazowieckie+Warszawa+Mokot%C3%B3w&ps[living_area_from]=150"
 
     if not Spider.root_url.startswith("https://domy.pl/"):
         print("Niepoprawny adres startowy; powinien zaczynac sie od https://domy.pl/")
@@ -263,4 +371,8 @@ if __name__ == '__main__':
 
     print("Parsowanie ogłoszeń:")
     Spider.parse_offers()
-    print("Znalezione ogłoszenia: {0}".format(Spider.lo_offers_objs.qsize()))
+    print("Opracowane ogłoszenia: {0}".format(Spider.lo_offers_objs.qsize()))
+
+    print("Zapisywanie ogłoszeń:")
+    Spider.save_csv()
+    print(Spider.csv_file_path)
