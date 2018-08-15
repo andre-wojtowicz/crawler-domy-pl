@@ -12,7 +12,6 @@ import progressbar
 # ______________________________________________________________________________________________________________________
 
 OUTPUT_DIR = "output"
-IMG_DIR = "img"
 OUTPUT_FILE_PFX = str(datetime.datetime.now())[:19].replace(":", "").replace(" ", "_")
 OFFERS_PER_PAGE = 75  # 25, 50, 75
 CHECKIP_URL = "http://checkip.dyn.com"
@@ -40,6 +39,8 @@ class Spider:
     pb_val = 0
     csv_file_name = None
     csv_file_path = None
+    img_dir_path = None
+    num_downloaded_photos = 0
 
     @classmethod
     def scan_root_url(cls):
@@ -199,9 +200,9 @@ class Spider:
         elif Spider.scan_type == "Mieszkania":
             stype = "mieszkania"
 
-        fname = f"{OUTPUT_FILE_PFX}_{stype}.csv" if cls.csv_file_name is None else cls.csv_file_name
+        cls.csv_file_name = f"{OUTPUT_FILE_PFX}_{stype}.csv" if cls.csv_file_name is None else cls.csv_file_name
 
-        cls.csv_file_path = f"{OUTPUT_DIR}/{fname}"
+        cls.csv_file_path = f"{OUTPUT_DIR}/{cls.csv_file_name}"
 
         csv_header = '"Lp";"Adm1";"Adm2";"Ulica";"Rynek pierwotny";"Cena";"Powierzchnia użytkowa";"Powierzchnia mieszkalna";"Liczba pokoi";"Rok budowy";"Piętro";"Typ budynku";"Winda";"Miejsca parkingowe";"Stan budynku";"Stan nieruchomości";"GPSX";"GPSY";"Url";"Zdjęcie"'
 
@@ -211,6 +212,40 @@ class Spider:
 
             for i, o in enumerate(cls.lo_offers_objs):
                 f.write(o.csv_line(i + 1) + '\n')
+
+    @classmethod
+    def download_photos(cls):
+
+        cls.img_dir_path = OUTPUT_DIR + "/" + cls.csv_file_name.split(".")[0]
+
+        try:
+            os.mkdir(cls.img_dir_path)
+        except FileExistsError:
+            pass
+
+        original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
+        pool = multiprocessing.Pool(cls.cores)
+
+        cls.pb = progressbar.ProgressBar(max_value=len(cls.lo_offers_objs))
+        cls.pb_val = 0
+
+        aa_results = []
+
+        for offer in cls.lo_offers_objs:
+            aa_results.append(pool.apply_async(mp_download_photos, (offer, cls.img_dir_path, cls.m_keyboard_event),
+                                               callback=cls.__pb_update))
+
+        pool.close()
+        pool.join()
+
+        if cls.m_keyboard_event.is_set():
+            exit(-9)
+
+        cls.pb.finish()
+
+        cls.num_downloaded_photos = sum([i.get() for i in aa_results])
+
+        signal.signal(signal.SIGINT, original_sigint_handler)
 
     @classmethod
     def __pb_update(cls, result):
@@ -239,6 +274,7 @@ class Offer:
     gps_y = None
     url = None
     photo_prefix = None
+    photo_urls = None
 
     def __init__(self, url):
         self.url = url
@@ -307,67 +343,105 @@ def mp_collect_offers(link, m_keyboard_event):
 
     return None
 
-def mp_parse_offers(v):
-    link, r_content = v
+def mp_parse_offers(v, m_keyboard_event):
+    if not m_keyboard_event.is_set():
+        try:
+            link, r_content = v
 
-    offer = Offer(link)
+            offer = Offer(link)
 
-    soup = BeautifulSoup(r_content, features="html.parser")
+            soup = BeautifulSoup(r_content, features="html.parser")
 
-    h_location = soup.find_all("span", {'typeof': 'v:Breadcrumb'})
+            h_location = soup.find_all("span", {'typeof': 'v:Breadcrumb'})
 
-    offer.adm_1 = h_location[4].find("a").text
-    offer.adm_2 = h_location[5].find("a").text
+            offer.adm_1 = h_location[4].find("a").text
+            offer.adm_2 = h_location[5].find("a").text
 
-    h_street = re.search('"street":.*?,', soup.prettify())
+            h_street = re.search('"street":.*?,', soup.prettify())
 
-    if h_street is None:
-        offer.street = None
-    else:
-        h_street_str = h_street.group(0)
+            if h_street is None:
+                offer.street = None
+            else:
+                h_street_str = h_street.group(0)
 
-        if "null" in h_street_str:
-            offer.street = None
-        else:
-            offer.street = h_street_str.split('"')[3].encode().decode("unicode_escape").strip()
+                if "null" in h_street_str:
+                    offer.street = None
+                else:
+                    offer.street = h_street_str.split('"')[3].encode().decode("unicode_escape").strip()
 
-    h_params = soup.find_all("div", {"class": "paramsItem"})
+            h_params = soup.find_all("div", {"class": "paramsItem"})
 
-    for v in h_params:
-        if "Cena:" in v.text:
-            offer.price = v.find("strong").text.replace(u'\xa0', u' ')
-        elif "Rynek pierwotny:" in v.text:
-            offer.primary_market = v.find("strong").text
-        elif "Powierzchnia użytkowa:" in v.text:
-            offer.area = v.find("strong").text
-        elif "Powierzchnia mieszkalna:" in v.text:
-            offer.living_area = v.find("strong").text
-        elif "Liczba pokoi:" in v.text:
-            offer.rooms = v.find("strong").text
-        elif "Rok budowy:" in v.text:
-            offer.year_of_construction = v.find("strong").text
-        elif "Piętro:" in v.text:
-            offer.floor = v.find("strong").text
-        elif "Typ budynku:" in v.text:
-            offer.type_of_building = v.find("strong").text
-        elif "Winda:" in v.text:
-            offer.lift = v.find("strong").text
-        elif "Miejsca parkingowe:" in v.text:
-            offer.parking_space = v.find("strong").text
-        elif "Stan budynku:" in v.text:
-            offer.state_of_building = v.find("strong").text
-        elif "Stan nieruchomości:" in v.text:
-            offer.state_of_property = v.find("strong").text
+            for v in h_params:
+                if "Cena:" in v.text:
+                    offer.price = v.find("strong").text.replace(u'\xa0', u' ')
+                elif "Rynek pierwotny:" in v.text:
+                    offer.primary_market = v.find("strong").text
+                elif "Powierzchnia użytkowa:" in v.text:
+                    offer.area = v.find("strong").text
+                elif "Powierzchnia mieszkalna:" in v.text:
+                    offer.living_area = v.find("strong").text
+                elif "Liczba pokoi:" in v.text:
+                    offer.rooms = v.find("strong").text
+                elif "Rok budowy:" in v.text:
+                    offer.year_of_construction = v.find("strong").text
+                elif "Piętro:" in v.text:
+                    offer.floor = v.find("strong").text
+                elif "Typ budynku:" in v.text:
+                    offer.type_of_building = v.find("strong").text
+                elif "Winda:" in v.text:
+                    offer.lift = v.find("strong").text
+                elif "Miejsca parkingowe:" in v.text:
+                    offer.parking_space = v.find("strong").text
+                elif "Stan budynku:" in v.text:
+                    offer.state_of_building = v.find("strong").text
+                elif "Stan nieruchomości:" in v.text:
+                    offer.state_of_property = v.find("strong").text
 
-    google_maps = soup.find("div", {"class" : "GoogleMap"})
+            google_maps = soup.find("div", {"class" : "GoogleMap"})
 
-    offer.gps_x = google_maps.get("data-lat") if google_maps is not None else None
-    offer.gps_y = google_maps.get("data-lng") if google_maps is not None else None
+            offer.gps_x = google_maps.get("data-lat") if google_maps is not None else None
+            offer.gps_y = google_maps.get("data-lng") if google_maps is not None else None
 
-    offer.photo_prefix = link.split("/")[-1]
+            offer.photo_prefix = link.split("/")[-1]
 
-    return offer
+            offer.photo_urls = []
 
+            img_i = 0
+            while True:
+                img_li = soup.find("li", {"class": f"image{img_i}"})
+                if img_li is None:
+                    break
+                img_src = img_li.find("img").get("src")
+                img_src_new = re.sub(r"/(\d+)/(\d+)/\d/thumbnail.jpg", "/640/480/2/thumbnail.jpg", img_src)
+                offer.photo_urls.append(img_src_new)
+                img_i += 1
+
+            return offer
+
+        except KeyboardInterrupt:
+            m_keyboard_event.set()
+
+    return None
+
+def mp_download_photos(offer, img_dir_path, m_keyboard_event):
+
+    di = 0
+
+    if not m_keyboard_event.is_set():
+        try:
+            for link in offer.photo_urls:
+                r = requests.get(link)
+                di += 1
+
+                with open(img_dir_path + "/" + offer.photo_prefix + "_" + str(di) + "." + link.split(".")[-1], 'wb') as f:
+                    for chunk in r:
+                        f.write(chunk)
+
+            return di
+        except KeyboardInterrupt:
+            m_keyboard_event.set()
+
+    return 0
 
 # ______________________________________________________________________________________________________________________
 
@@ -466,3 +540,8 @@ if __name__ == '__main__':
     print("Zapisywanie ogłoszeń:")
     Spider.save_csv()
     print(Spider.csv_file_path)
+
+    print("Pobieranie zdjęć:")
+    Spider.download_photos()
+    print(Spider.img_dir_path)
+    print(f"Pobrane zdjęcia: {Spider.num_downloaded_photos}")
