@@ -4,6 +4,7 @@ import multiprocessing
 import os
 import re
 import requests
+import signal
 
 from bs4 import BeautifulSoup
 import progressbar
@@ -28,6 +29,8 @@ class Spider:
     offers_downloaded = 0
     pages = 0
     first_page = None
+    m_manager = None
+    m_keyboard_event = None
     lo_pages = []
     lo_offers_links = []
     lo_offers_html = []
@@ -70,6 +73,8 @@ class Spider:
     @classmethod
     def collect_remaining_pages(cls):
 
+        original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
+
         pool = multiprocessing.Pool(cls.cores)
 
         cls.lo_pages.append(cls.first_page)
@@ -80,15 +85,21 @@ class Spider:
         aa_results = []
 
         for i in range(2, cls.pages + 1):
-            aa_results.append(pool.apply_async(mp_collect_remaining_pages, (i, cls.root_url), callback=cls.__pb_update))
+            aa_results.append(pool.apply_async(mp_collect_remaining_pages, (i, cls.root_url, cls.m_keyboard_event),
+                                               callback=cls.__pb_update))
 
         pool.close()
         pool.join()
+
+        if cls.m_keyboard_event.is_set():
+            exit(-9)
 
         cls.pb.finish()
 
         for result in aa_results:
             cls.lo_pages.append(result.get())
+
+        signal.signal(signal.SIGINT, original_sigint_handler)
 
     @classmethod
     def parse_pages(cls):
@@ -242,10 +253,16 @@ class Offer:
 # ______________________________________________________________________________________________________________________
 
 
-def mp_collect_remaining_pages(i, root_url):
-    r = requests.get(root_url + "&page=" + str(i))
-    return r.content
+def mp_collect_remaining_pages(i, root_url, m_keyboard_event):
 
+    if not m_keyboard_event.is_set():
+        try:
+            r = requests.get(root_url + "&page=" + str(i))
+            return r.content
+        except KeyboardInterrupt:
+            m_keyboard_event.set()
+
+    return None
 
 def mp_parse_pages(r_content):
     soup = BeautifulSoup(r_content, features="html.parser")
@@ -340,7 +357,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.test:
-        Spider.root_url = "https://domy.pl/inwestycje/szukaj?ps%5Btype%5D=998&ps%5Badvanced_search%5D=1&ps%5Blocation%5D%5Btype%5D=1&ps%5Bsub_type%5D=1&ps%5Blocation%5D%5Btext_queue%5D%5B%5D=mazowieckie+Warszawa+Mokot%C3%B3w&ps%5Blocation%5D%5Btext_tmp_queue%5D%5B%5D=mazowieckie+Warszawa+Mokot%C3%B3w&ps%5Bliving_area_from%5D=80&ps%5Bcompletion_date_to_month%5D=12&ps%5Bcompletion_date_to_year%5D=2022"
+        Spider.root_url = "https://domy.pl/mieszkania-sprzedaz-warszawa+mokotow-pl?ps%5Badvanced_search%5D=0&ps%5Bsort_order%5D=rank&ps%5Blocation%5D%5Btype%5D=1&ps%5Btransaction%5D=1&ps%5Btype%5D=1&ps%5Blocation%5D%5Btext_queue%5D%5B%5D=Warszawa+Mokot%C3%B3w&ps%5Blocation%5D%5Btext_tmp_queue%5D%5B%5D=Warszawa+Mokot%C3%B3w"
     else:
         Spider.root_url = input("Adres startowy: ")
 
@@ -362,8 +379,15 @@ if __name__ == '__main__':
     else:
         Spider.root_url = re.sub(r"&limit=(\d+)", f"&limit={args.offers_per_page}", Spider.root_url)
 
+    print(f"Limit ogłoszeń na stronę: {args.offers_per_page}")
+
     if args.output_csv is not None:
         Spider.csv_file_name = args.output_csv
+
+    # configure multiprocessing
+
+    Spider.m_manager = multiprocessing.Manager()
+    Spider.m_keyboard_event = Spider.m_manager.Event()
 
     # print host IP
 
