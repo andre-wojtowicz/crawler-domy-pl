@@ -14,6 +14,7 @@ import progressbar
 OUTPUT_DIR = "output"
 OUTPUT_FILE_PFX = str(datetime.datetime.now())[:19].replace(":", "").replace(" ", "_")
 OFFERS_PER_PAGE = 75  # 25, 50, 75
+MAX_IMAGES_DOWNLOAD = 2
 CHECKIP_URL = "http://checkip.dyn.com"
 TEST_URL_FILE = "test-url.txt"
 
@@ -22,6 +23,7 @@ TEST_URL_FILE = "test-url.txt"
 class Spider:
     cores = None
     scan_type = None
+    max_images_download = 0
     root_url = None
     offers_found = 0
     offers_warn = False
@@ -48,7 +50,9 @@ class Spider:
         r = requests.get(cls.root_url)
         soup = BeautifulSoup(r.content, features="html.parser")
 
-        cls.scan_type = soup.find("span", {'class': 'mi_defaultValue'}).text.strip()
+        sst = soup.find("span", {'class': 'mi_defaultValue'})
+        if sst is not None:
+            cls.scan_type = sst.text.strip()
 
         obj_offers_found = soup.find("h2", {'class': 'offersFound'})
 
@@ -232,8 +236,8 @@ class Spider:
         aa_results = []
 
         for offer in cls.lo_offers_objs:
-            aa_results.append(pool.apply_async(mp_download_photos, (offer, cls.img_dir_path, cls.m_keyboard_event),
-                                               callback=cls.__pb_update))
+            aa_results.append(pool.apply_async(mp_download_photos, (offer, cls.img_dir_path, cls.max_images_download,
+                                                                    cls.m_keyboard_event), callback=cls.__pb_update))
 
         pool.close()
         pool.join()
@@ -354,8 +358,15 @@ def mp_parse_offers(v, m_keyboard_event):
 
             h_location = soup.find_all("span", {'typeof': 'v:Breadcrumb'})
 
-            offer.adm_1 = h_location[4].find("a").text
-            offer.adm_2 = h_location[5].find("a").text
+            if h_location != []:
+                if len(h_location) > 4:
+                    sobj = h_location[4].find("a")
+                    if sobj is not None:
+                        offer.adm_1 = sobj.text
+                if len(h_location) > 5:
+                    sobj = h_location[5].find("a")
+                    if sobj is not None:
+                        offer.adm_2 = sobj.text
 
             h_street = re.search('"street":.*?,', soup.prettify())
 
@@ -367,7 +378,10 @@ def mp_parse_offers(v, m_keyboard_event):
                 if "null" in h_street_str:
                     offer.street = None
                 else:
-                    offer.street = h_street_str.split('"')[3].encode().decode("unicode_escape").strip()
+                    try:
+                        offer.street = h_street_str.split('"')[3].encode().decode("unicode_escape").strip()
+                    except UnicodeDecodeError:
+                        offer.street = None
 
             h_params = soup.find_all("div", {"class": "paramsItem"})
 
@@ -411,7 +425,10 @@ def mp_parse_offers(v, m_keyboard_event):
                 img_li = soup.find("li", {"class": f"image{img_i}"})
                 if img_li is None:
                     break
-                img_src = img_li.find("img").get("src")
+                img_mp = img_li.find("img")
+                if img_mp is None:
+                    break
+                img_src = img_mp.get("src")
                 img_src_new = re.sub(r"/(\d+)/(\d+)/\d/thumbnail.jpg", "/640/480/2/thumbnail.jpg", img_src)
                 offer.photo_urls.append(img_src_new)
                 img_i += 1
@@ -423,13 +440,16 @@ def mp_parse_offers(v, m_keyboard_event):
 
     return None
 
-def mp_download_photos(offer, img_dir_path, m_keyboard_event):
-
-    di = 0
+def mp_download_photos(offer, img_dir_path, max_images_download, m_keyboard_event):
 
     if not m_keyboard_event.is_set():
         try:
+            di = 0
+
             for link in offer.photo_urls:
+                if di >= max_images_download:
+                    break
+
                 r = requests.get(link)
                 di += 1
 
@@ -447,101 +467,116 @@ def mp_download_photos(offer, img_dir_path, m_keyboard_event):
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--cores", type=int, default=multiprocessing.cpu_count(),
-                        help="number of cores used in multiprocessing routines, "
-                             "negative number decreases max available,"
-                             "default (vary on hosts): " + str(multiprocessing.cpu_count()))
-    parser.add_argument("-p", "--offers-per-page", type=int, default=75,
-                        help=f"number of offers per page (25, 50, 75), default: {OFFERS_PER_PAGE}")
-    parser.add_argument("-o", "--output-csv", type=str,
-                        help=f"name of resulting csv file in \"{OUTPUT_DIR}\" directory ")
-    parser.add_argument("-t", "--test", action="store_true", help=f"run in test mode and reads url from {TEST_URL_FILE}")
+    try:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("-c", "--cores", type=int, default=multiprocessing.cpu_count(),
+                            help="number of cores used in multiprocessing routines, "
+                                 "negative number decreases max available,"
+                                 "default (vary on hosts): " + str(multiprocessing.cpu_count()))
+        parser.add_argument("-i", "--max-images-download", type=int, default=MAX_IMAGES_DOWNLOAD,
+                            help=f"maximum number of images to download, default: {MAX_IMAGES_DOWNLOAD}")
+        parser.add_argument("-p", "--offers-per-page", type=int, default=75,
+                            help=f"number of offers per page (25, 50, 75), default: {OFFERS_PER_PAGE}")
+        parser.add_argument("-o", "--output-csv", type=str,
+                            help=f"name of resulting csv file in \"{OUTPUT_DIR}\" directory ")
+        parser.add_argument("-t", "--test", action="store_true", help=f"run in test mode and reads url from {TEST_URL_FILE}")
 
-    args = parser.parse_args()
+        args = parser.parse_args()
 
-    if args.test and os.path.isfile(TEST_URL_FILE):
-        with open(TEST_URL_FILE, 'r') as f:
-            Spider.root_url = f.read()
-    else:
-        Spider.root_url = input("Adres startowy: ")
+        if args.test and os.path.isfile(TEST_URL_FILE):
+            with open(TEST_URL_FILE, 'r') as f:
+                Spider.root_url = f.read()
+        else:
+            Spider.root_url = input("Adres startowy: ")
 
-    if not Spider.root_url.startswith("https://domy.pl/"):
-        print("Niepoprawny adres startowy; powinien zaczynać się od https://domy.pl/")
-        exit(1)
+        if not Spider.root_url.startswith("https://domy.pl/"):
+            print("Niepoprawny adres startowy; powinien zaczynać się od https://domy.pl/")
+            exit(1)
 
-    if args.cores == 0:
-        Spider.cores = multiprocessing.cpu_count()
-    elif args.cores < 0:
-        Spider.cores = max(args.cores + multiprocessing.cpu_count(), 1)
-    else:
-        Spider.cores = args.cores
+        if args.offers_per_page not in (25, 50, 75):
+            print(f"Niepoprawny limit ofert na stronę: {args.offers_per_page} (dopuszczalne wartości: 25, 50, 75)")
+            exit(-1)
 
-    print(f"Procesy: {Spider.cores}")
+        if "&limit" not in Spider.root_url:
+            Spider.root_url += f"&limit={args.offers_per_page}"
+        else:
+            Spider.root_url = re.sub(r"&limit=(\d+)", f"&limit={args.offers_per_page}", Spider.root_url)
 
-    if "&limit" not in Spider.root_url:
-        Spider.root_url += f"&limit={args.offers_per_page}"
-    else:
-        Spider.root_url = re.sub(r"&limit=(\d+)", f"&limit={args.offers_per_page}", Spider.root_url)
+        print(f"Limit ogłoszeń na stronę: {args.offers_per_page}")
 
-    print(f"Limit ogłoszeń na stronę: {args.offers_per_page}")
+        Spider.max_images_download = args.max_images_download if args.max_images_download >= 0 else MAX_IMAGES_DOWNLOAD
 
-    if args.output_csv is not None:
-        Spider.csv_file_name = args.output_csv
+        print(f"Limit pobieranych zdjęć z ogłoszenia: {Spider.max_images_download}")
 
-    # configure multiprocessing
+        if args.output_csv is not None:
+            Spider.csv_file_name = args.output_csv
 
-    Spider.m_manager = multiprocessing.Manager()
-    Spider.m_keyboard_event = Spider.m_manager.Event()
+        # configure multiprocessing
 
-    # print host IP
+        if args.cores == 0:
+            Spider.cores = multiprocessing.cpu_count()
+        elif args.cores < 0:
+            Spider.cores = max(args.cores + multiprocessing.cpu_count(), 1)
+        else:
+            Spider.cores = args.cores
 
-    r = requests.get(CHECKIP_URL)
-    soup = BeautifulSoup(r.content, features="html.parser")
+        print(f"Procesy: {Spider.cores}")
 
-    print("Host IP: {0}".format(re.search(r"\d+\.\d+\.\d+\.\d+", soup.text).group(0)))
+        Spider.m_manager = multiprocessing.Manager()
+        Spider.m_keyboard_event = Spider.m_manager.Event()
 
-    # scan root url
+        # print host IP
 
-    Spider.scan_root_url()
+        r = requests.get(CHECKIP_URL)
+        soup = BeautifulSoup(r.content, features="html.parser")
 
-    print(f"Typ ogłoszeń: {Spider.scan_type}")
-    print(f"Liczba ogłoszeń: {Spider.offers_real}")
+        print("Host IP: {0}".format(re.search(r"\d+\.\d+\.\d+\.\d+", soup.text).group(0)))
 
-    if Spider.offers_real == 0:
-        exit(0)
+        # scan root url
 
-    if Spider.offers_warn:
-        print(f'* W tej lokalizacji znajduje się więcej ogłoszeń ({Spider.offers_found}); ')
-        print('* aby je obejrzeć, zawęź kryteria wyszukiwania')
+        Spider.scan_root_url()
 
-    if Spider.pages > 1:
-        print("Pobieranie pozostałych stron:")
-        Spider.collect_remaining_pages()
-    else:
-        Spider.process_first_page()
-    print("Pobrane strony: {0}".format(len(Spider.lo_pages)))
+        print(f"Typ ogłoszeń: {Spider.scan_type}")
+        print(f"Liczba ogłoszeń: {Spider.offers_real}")
 
-    print("Parsowanie stron:")
-    Spider.parse_pages()
-    print("Znalezione linki: {0}".format(len(Spider.lo_offers_links)))
+        if Spider.offers_real == 0:
+            exit(0)
 
-    if len(Spider.lo_offers_links) == 0:
-        exit(-3)
+        if Spider.offers_warn:
+            print(f'* W tej lokalizacji znajduje się więcej ogłoszeń ({Spider.offers_found}); ')
+            print('* aby je obejrzeć, zawęź kryteria wyszukiwania')
 
-    print("Pobieranie ogłoszeń:")
-    Spider.collect_offers()
-    print("Pobrane ogłoszenia: {0}".format(len(Spider.lo_offers_html)))
+        if Spider.pages > 1:
+            print("Pobieranie pozostałych stron:")
+            Spider.collect_remaining_pages()
+        else:
+            Spider.process_first_page()
+        print("Pobrane strony: {0}".format(len(Spider.lo_pages)))
 
-    print("Parsowanie ogłoszeń:")
-    Spider.parse_offers()
-    print("Opracowane ogłoszenia: {0}".format(len(Spider.lo_offers_objs)))
+        print("Parsowanie stron:")
+        Spider.parse_pages()
+        print("Znalezione linki: {0}".format(len(Spider.lo_offers_links)))
 
-    print("Zapisywanie ogłoszeń:")
-    Spider.save_csv()
-    print(Spider.csv_file_path)
+        if len(Spider.lo_offers_links) == 0:
+            exit(-3)
 
-    print("Pobieranie zdjęć:")
-    Spider.download_photos()
-    print(Spider.img_dir_path)
-    print(f"Pobrane zdjęcia: {Spider.num_downloaded_photos}")
+        print("Pobieranie ogłoszeń:")
+        Spider.collect_offers()
+        print("Pobrane ogłoszenia: {0}".format(len(Spider.lo_offers_html)))
+
+        print("Parsowanie ogłoszeń:")
+        Spider.parse_offers()
+        print("Opracowane ogłoszenia: {0}".format(len(Spider.lo_offers_objs)))
+
+        print("Zapisywanie ogłoszeń:")
+        Spider.save_csv()
+        print(Spider.csv_file_path)
+
+        if Spider.max_images_download > 0:
+            print("Pobieranie zdjęć:")
+            Spider.download_photos()
+            print(Spider.img_dir_path)
+            print(f"Pobrane zdjęcia: {Spider.num_downloaded_photos}")
+
+    except KeyboardInterrupt:
+        pass
