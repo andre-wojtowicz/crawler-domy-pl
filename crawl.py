@@ -25,12 +25,11 @@ class Spider:
     offers_real = 0
     offers_downloaded = 0
     pages = 0
-    m_manager = None
     first_page = None
-    lo_pages = None
-    lo_offers_links = None
-    lo_offers_html = None
-    lo_offers_objs = None
+    lo_pages = []
+    lo_offers_links = []
+    lo_offers_html = []
+    lo_offers_objs = []
     pb = None
     pb_val = 0
     csv_file_path = None
@@ -63,77 +62,94 @@ class Spider:
     @classmethod
     def process_first_page(cls):
 
-        cls.lo_pages.put(cls.first_page)
+        cls.lo_pages.append(cls.first_page)
 
     @classmethod
     def collect_remaining_pages(cls):
 
         pool = multiprocessing.Pool()
 
-        cls.lo_pages.put(cls.first_page)
+        cls.lo_pages.append(cls.first_page)
 
         cls.pb = progressbar.ProgressBar(max_value=cls.pages - 1)
         cls.pb_val = 0
 
+        aa_results = []
+
         for i in range(2, cls.pages + 1):
-            pool.apply_async(mp_collect_remaining_pages, (i, cls.root_url, cls.lo_pages), callback=cls.__pb_update)
+            aa_results.append(pool.apply_async(mp_collect_remaining_pages, (i, cls.root_url), callback=cls.__pb_update))
 
         pool.close()
         pool.join()
 
         cls.pb.finish()
+
+        for result in aa_results:
+            cls.lo_pages.append(result.get())
 
     @classmethod
     def parse_pages(cls):
 
         pool = multiprocessing.Pool()
 
-        p_size = cls.lo_pages.qsize()
-
-        cls.pb = progressbar.ProgressBar(max_value=p_size)
+        cls.pb = progressbar.ProgressBar(max_value=len(cls.lo_pages))
         cls.pb_val = 0
 
-        for i in range(p_size):
-            pool.apply_async(mp_parse_pages, (i + 1, cls.lo_pages, cls.lo_offers_links), callback=cls.__pb_update)
+        aa_results = []
+
+        for page in cls.lo_pages:
+            aa_results.append(pool.apply_async(mp_parse_pages, (page, ), callback=cls.__pb_update))
 
         pool.close()
         pool.join()
 
         cls.pb.finish()
+
+        for result in aa_results:
+            for link in result.get():
+                cls.lo_offers_links.append(link)
 
     @classmethod
     def collect_offers(cls):
 
         pool = multiprocessing.Pool()
 
-        cls.pb = progressbar.ProgressBar(max_value=cls.lo_offers_links.qsize())
+        cls.pb = progressbar.ProgressBar(max_value=len(cls.lo_offers_links))
         cls.pb_val = 0
 
-        for i in range(cls.lo_offers_links.qsize()):
-            pool.apply_async(mp_collect_offers, (i + 1, cls.lo_offers_links, cls.lo_offers_html),
-                             callback=cls.__pb_update)
+        aa_results = []
+
+        for link in cls.lo_offers_links:
+            aa_results.append(pool.apply_async(mp_collect_offers, (link, ), callback=cls.__pb_update))
 
         pool.close()
         pool.join()
 
         cls.pb.finish()
+
+        for result in aa_results:
+            cls.lo_offers_html.append(result.get())
 
     @classmethod
     def parse_offers(cls):
 
         pool = multiprocessing.Pool()
 
-        cls.pb = progressbar.ProgressBar(max_value=cls.lo_offers_html.qsize())
+        cls.pb = progressbar.ProgressBar(max_value=len(cls.lo_offers_html))
         cls.pb_val = 0
 
-        for i in range(cls.lo_offers_html.qsize()):
-           pool.apply_async(mp_parse_offers, (i + 1, cls.lo_offers_html, cls.lo_offers_objs),
-                            callback=cls.__pb_update)
+        aa_results = []
+
+        for html in cls.lo_offers_html:
+            aa_results.append(pool.apply_async(mp_parse_offers, (html, ), callback=cls.__pb_update))
 
         pool.close()
         pool.join()
 
         cls.pb.finish()
+
+        for result in aa_results:
+            cls.lo_offers_objs.append(result.get())
 
     @classmethod
     def save_csv(cls):
@@ -159,11 +175,8 @@ class Spider:
 
             f.write(csv_header + '\n')
 
-            i = 1
-            while cls.lo_offers_objs.qsize() > 0:
-                o = cls.lo_offers_objs.get()
-                f.write(o.csv_line(i) + '\n')
-                i += 1
+            for i, o in enumerate(cls.lo_offers_objs):
+                f.write(o.csv_line(i + 1) + '\n')
 
     @classmethod
     def __pb_update(cls, result):
@@ -223,40 +236,31 @@ class Offer:
 
 # ______________________________________________________________________________________________________________________
 
-def mp_collect_remaining_pages(i, root_url, q):
+
+def mp_collect_remaining_pages(i, root_url):
     r = requests.get(root_url + "&page=" + str(i))
-    q.put(r.content)
+    return r.content
 
 
-def mp_parse_pages(i, q_pages, q_offers_links):
-    r_content = q_pages.get()
-
+def mp_parse_pages(r_content):
     soup = BeautifulSoup(r_content, features="html.parser")
 
     objs = soup.find_all("a", {'class': 'property_link'})
 
-    for bs_obj in objs:
-        q_offers_links.put(bs_obj["href"])
+    return [bs_obj["href"] for bs_obj in objs]
 
 
-def mp_collect_offers(i, q_offers_links, q_offers):
-    link = q_offers_links.get()
+def mp_collect_offers(link):
     r = requests.get(link)
-    q_offers.put((link, r.content))
+    return (link, r.content)
 
 
-def mp_parse_offers(i, q_offers_html, q_offers_objs):
-    link, r_content = q_offers_html.get()
+def mp_parse_offers(v):
+    link, r_content = v
 
     offer = Offer(link)
 
     soup = BeautifulSoup(r_content, features="html.parser")
-
-    #h_location = soup.find("h1").find("strong").text.split(",")
-    #
-    #offer.adm_1 = h_location[0].strip() if len(h_location) > 0 else None
-    #offer.adm_2 = h_location[1].strip() if len(h_location) > 1 else None
-    #offer.street = h_location[-1].strip() if len(h_location) >= 3 else None
 
     h_location = soup.find_all("span", {'typeof': 'v:Breadcrumb'})
 
@@ -268,7 +272,7 @@ def mp_parse_offers(i, q_offers_html, q_offers_objs):
     if h_street is None:
         offer.street = None
     else:
-        h_street_str = re.search('"street":.*?,', soup.prettify()).group(0)
+        h_street_str = h_street.group(0)
 
         if "null" in h_street_str:
             offer.street = None
@@ -310,7 +314,7 @@ def mp_parse_offers(i, q_offers_html, q_offers_objs):
 
     offer.photo_prefix = link.split("/")[-1]
 
-    q_offers_objs.put(offer)
+    return offer
 
 
 # ______________________________________________________________________________________________________________________
@@ -335,14 +339,6 @@ if __name__ == '__main__':
 
     print("Host IP: {0}".format(re.search("\d+\.\d+\.\d+\.\d+", soup.text).group(0)))
 
-    # configure multiprocessing
-
-    Spider.m_manager = multiprocessing.Manager()
-    Spider.lo_pages = Spider.m_manager.Queue()
-    Spider.lo_offers_links = Spider.m_manager.Queue()
-    Spider.lo_offers_html = Spider.m_manager.Queue()
-    Spider.lo_offers_objs = Spider.m_manager.Queue()
-
     # scan root url
 
     Spider.scan_root_url()
@@ -362,22 +358,22 @@ if __name__ == '__main__':
         Spider.collect_remaining_pages()
     else:
         Spider.process_first_page()
-    print("Pobrane strony: {0}".format(Spider.lo_pages.qsize()))
+    print("Pobrane strony: {0}".format(len(Spider.lo_pages)))
 
     print("Parsowanie stron:")
     Spider.parse_pages()
-    print("Znalezione linki: {0}".format(Spider.lo_offers_links.qsize()))
+    print("Znalezione linki: {0}".format(len(Spider.lo_offers_links)))
 
-    if Spider.lo_offers_links.qsize() == 0:
+    if len(Spider.lo_offers_links) == 0:
         exit(-3)
 
     print("Pobieranie ogłoszeń:")
     Spider.collect_offers()
-    print("Pobrane ogłoszenia: {0}".format(Spider.lo_offers_html.qsize()))
+    print("Pobrane ogłoszenia: {0}".format(len(Spider.lo_offers_html)))
 
     print("Parsowanie ogłoszeń:")
     Spider.parse_offers()
-    print("Opracowane ogłoszenia: {0}".format(Spider.lo_offers_objs.qsize()))
+    print("Opracowane ogłoszenia: {0}".format(len(Spider.lo_offers_objs)))
 
     print("Zapisywanie ogłoszeń:")
     Spider.save_csv()
