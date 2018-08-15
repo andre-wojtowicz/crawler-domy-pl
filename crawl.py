@@ -5,6 +5,7 @@ import os
 import re
 import requests
 import signal
+from sys import exit
 
 from bs4 import BeautifulSoup
 import progressbar
@@ -467,6 +468,8 @@ def mp_download_photos(offer, img_dir_path, max_images_download, m_keyboard_even
 
 if __name__ == '__main__':
 
+    multiprocessing.freeze_support()
+
     try:
         parser = argparse.ArgumentParser()
         parser.add_argument("-c", "--cores", type=int, default=multiprocessing.cpu_count(),
@@ -568,14 +571,14 @@ if __name__ == '__main__':
         Spider.parse_offers()
         print("Opracowane ogłoszenia: {0}".format(len(Spider.lo_offers_objs)))
 
-        print("Zapisywanie ogłoszeń:")
+        print("Zapisywanie ogłoszeń...")
         Spider.save_csv()
-        print(Spider.csv_file_path)
+        print(f"Plik: {Spider.csv_file_path}")
 
         if Spider.max_images_download > 0:
-            print("Pobieranie zdjęć:")
+            print("Pobieranie zdjęć z ogłoszeń:")
             Spider.download_photos()
-            print(Spider.img_dir_path)
+            print(f"Katalog: {Spider.img_dir_path}")
             print(f"Pobrane zdjęcia: {Spider.num_downloaded_photos}")
 
     except KeyboardInterrupt:
