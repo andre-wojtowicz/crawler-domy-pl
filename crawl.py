@@ -16,6 +16,7 @@ IMG_DIR = "img"
 OUTPUT_FILE_PFX = str(datetime.datetime.now())[:19].replace(":", "").replace(" ", "_")
 OFFERS_PER_PAGE = 75  # 25, 50, 75
 CHECKIP_URL = "http://checkip.dyn.com"
+TEST_URL_FILE = "test-url.txt"
 
 # ______________________________________________________________________________________________________________________
 
@@ -74,7 +75,6 @@ class Spider:
     def collect_remaining_pages(cls):
 
         original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
-
         pool = multiprocessing.Pool(cls.cores)
 
         cls.lo_pages.append(cls.first_page)
@@ -104,6 +104,7 @@ class Spider:
     @classmethod
     def parse_pages(cls):
 
+        original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
         pool = multiprocessing.Pool(cls.cores)
 
         cls.pb = progressbar.ProgressBar(max_value=len(cls.lo_pages))
@@ -112,10 +113,13 @@ class Spider:
         aa_results = []
 
         for page in cls.lo_pages:
-            aa_results.append(pool.apply_async(mp_parse_pages, (page, ), callback=cls.__pb_update))
+            aa_results.append(pool.apply_async(mp_parse_pages, (page, cls.m_keyboard_event), callback=cls.__pb_update))
 
         pool.close()
         pool.join()
+
+        if cls.m_keyboard_event.is_set():
+            exit(-9)
 
         cls.pb.finish()
 
@@ -123,9 +127,12 @@ class Spider:
             for link in result.get():
                 cls.lo_offers_links.append(link)
 
+        signal.signal(signal.SIGINT, original_sigint_handler)
+
     @classmethod
     def collect_offers(cls):
 
+        original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
         pool = multiprocessing.Pool(cls.cores)
 
         cls.pb = progressbar.ProgressBar(max_value=len(cls.lo_offers_links))
@@ -134,19 +141,25 @@ class Spider:
         aa_results = []
 
         for link in cls.lo_offers_links:
-            aa_results.append(pool.apply_async(mp_collect_offers, (link, ), callback=cls.__pb_update))
+            aa_results.append(pool.apply_async(mp_collect_offers, (link, cls.m_keyboard_event), callback=cls.__pb_update))
 
         pool.close()
         pool.join()
+
+        if cls.m_keyboard_event.is_set():
+            exit(-9)
 
         cls.pb.finish()
 
         for result in aa_results:
             cls.lo_offers_html.append(result.get())
 
+        signal.signal(signal.SIGINT, original_sigint_handler)
+
     @classmethod
     def parse_offers(cls):
 
+        original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
         pool = multiprocessing.Pool(cls.cores)
 
         cls.pb = progressbar.ProgressBar(max_value=len(cls.lo_offers_html))
@@ -155,15 +168,20 @@ class Spider:
         aa_results = []
 
         for html in cls.lo_offers_html:
-            aa_results.append(pool.apply_async(mp_parse_offers, (html, ), callback=cls.__pb_update))
+            aa_results.append(pool.apply_async(mp_parse_offers, (html, cls.m_keyboard_event), callback=cls.__pb_update))
 
         pool.close()
         pool.join()
+
+        if cls.m_keyboard_event.is_set():
+            exit(-9)
 
         cls.pb.finish()
 
         for result in aa_results:
             cls.lo_offers_objs.append(result.get())
+
+        signal.signal(signal.SIGINT, original_sigint_handler)
 
     @classmethod
     def save_csv(cls):
@@ -264,18 +282,30 @@ def mp_collect_remaining_pages(i, root_url, m_keyboard_event):
 
     return None
 
-def mp_parse_pages(r_content):
-    soup = BeautifulSoup(r_content, features="html.parser")
+def mp_parse_pages(r_content, m_keyboard_event):
 
-    objs = soup.find_all("a", {'class': 'property_link'})
+    if not m_keyboard_event.is_set():
+        try:
+            soup = BeautifulSoup(r_content, features="html.parser")
 
-    return [bs_obj["href"] for bs_obj in objs]
+            objs = soup.find_all("a", {'class': 'property_link'})
 
+            return [bs_obj["href"] for bs_obj in objs]
+        except KeyboardInterrupt:
+            m_keyboard_event.set()
 
-def mp_collect_offers(link):
-    r = requests.get(link)
-    return (link, r.content)
+    return None
 
+def mp_collect_offers(link, m_keyboard_event):
+
+    if not m_keyboard_event.is_set():
+        try:
+            r = requests.get(link)
+            return (link, r.content)
+        except KeyboardInterrupt:
+            m_keyboard_event.set()
+
+    return None
 
 def mp_parse_offers(v):
     link, r_content = v
@@ -352,17 +382,18 @@ if __name__ == '__main__':
                         help=f"number of offers per page (25, 50, 75), default: {OFFERS_PER_PAGE}")
     parser.add_argument("-o", "--output-csv", type=str,
                         help=f"name of resulting csv file in \"{OUTPUT_DIR}\" directory ")
-    parser.add_argument("-t", "--test", action="store_true", help="run in test mode")
+    parser.add_argument("-t", "--test", action="store_true", help=f"run in test mode and reads url from {TEST_URL_FILE}")
 
     args = parser.parse_args()
 
-    if args.test:
-        Spider.root_url = "https://domy.pl/mieszkania-sprzedaz-warszawa+mokotow-pl?ps%5Badvanced_search%5D=0&ps%5Bsort_order%5D=rank&ps%5Blocation%5D%5Btype%5D=1&ps%5Btransaction%5D=1&ps%5Btype%5D=1&ps%5Blocation%5D%5Btext_queue%5D%5B%5D=Warszawa+Mokot%C3%B3w&ps%5Blocation%5D%5Btext_tmp_queue%5D%5B%5D=Warszawa+Mokot%C3%B3w"
+    if args.test and os.path.isfile(TEST_URL_FILE):
+        with open(TEST_URL_FILE, 'r') as f:
+            Spider.root_url = f.read()
     else:
         Spider.root_url = input("Adres startowy: ")
 
     if not Spider.root_url.startswith("https://domy.pl/"):
-        print("Niepoprawny adres startowy; powinien zaczynac sie od https://domy.pl/")
+        print("Niepoprawny adres startowy; powinien zaczynać się od https://domy.pl/")
         exit(1)
 
     if args.cores == 0:
@@ -411,7 +442,7 @@ if __name__ == '__main__':
         print('* aby je obejrzeć, zawęź kryteria wyszukiwania')
 
     if Spider.pages > 1:
-        print("Pobieranie pozostalych stron:")
+        print("Pobieranie pozostałych stron:")
         Spider.collect_remaining_pages()
     else:
         Spider.process_first_page()

@@ -106,3 +106,4 @@ venv.bak/
 # extra
 output/
 img/
+test-url.txt
