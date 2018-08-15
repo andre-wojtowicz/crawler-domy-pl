@@ -1,3 +1,4 @@
+import argparse
 import datetime
 import multiprocessing
 import os
@@ -18,6 +19,7 @@ CHECKIP_URL = "http://checkip.dyn.com"
 # ______________________________________________________________________________________________________________________
 
 class Spider:
+    cores = None
     scan_type = None
     root_url = None
     offers_found = 0
@@ -32,6 +34,7 @@ class Spider:
     lo_offers_objs = []
     pb = None
     pb_val = 0
+    csv_file_name = None
     csv_file_path = None
 
     @classmethod
@@ -67,7 +70,7 @@ class Spider:
     @classmethod
     def collect_remaining_pages(cls):
 
-        pool = multiprocessing.Pool()
+        pool = multiprocessing.Pool(cls.cores)
 
         cls.lo_pages.append(cls.first_page)
 
@@ -90,7 +93,7 @@ class Spider:
     @classmethod
     def parse_pages(cls):
 
-        pool = multiprocessing.Pool()
+        pool = multiprocessing.Pool(cls.cores)
 
         cls.pb = progressbar.ProgressBar(max_value=len(cls.lo_pages))
         cls.pb_val = 0
@@ -112,7 +115,7 @@ class Spider:
     @classmethod
     def collect_offers(cls):
 
-        pool = multiprocessing.Pool()
+        pool = multiprocessing.Pool(cls.cores)
 
         cls.pb = progressbar.ProgressBar(max_value=len(cls.lo_offers_links))
         cls.pb_val = 0
@@ -133,7 +136,7 @@ class Spider:
     @classmethod
     def parse_offers(cls):
 
-        pool = multiprocessing.Pool()
+        pool = multiprocessing.Pool(cls.cores)
 
         cls.pb = progressbar.ProgressBar(max_value=len(cls.lo_offers_html))
         cls.pb_val = 0
@@ -167,7 +170,9 @@ class Spider:
         elif Spider.scan_type == "Mieszkania":
             stype = "mieszkania"
 
-        cls.csv_file_path = f"{OUTPUT_DIR}/{OUTPUT_FILE_PFX}_{stype}.csv"
+        fname = f"{OUTPUT_FILE_PFX}_{stype}.csv" if cls.csv_file_name is None else cls.csv_file_name
+
+        cls.csv_file_path = f"{OUTPUT_DIR}/{fname}"
 
         csv_header = '"Lp";"Adm1";"Adm2";"Ulica";"Rynek pierwotny";"Cena";"Powierzchnia użytkowa";"Powierzchnia mieszkalna";"Liczba pokoi";"Rok budowy";"Piętro";"Typ budynku";"Winda";"Miejsca parkingowe";"Stan budynku";"Stan nieruchomości";"GPSX";"GPSY";"Url";"Zdjęcie"'
 
@@ -321,23 +326,51 @@ def mp_parse_offers(v):
 
 if __name__ == '__main__':
 
-    # Spider.root_url = input("Adres startowy: ")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-c", "--cores", type=int, default=multiprocessing.cpu_count(),
+                        help="number of cores used in multiprocessing routines, "
+                             "negative number decreases max available,"
+                             "default (vary on hosts): " + str(multiprocessing.cpu_count()))
+    parser.add_argument("-p", "--offers-per-page", type=int, default=75,
+                        help=f"number of offers per page (25, 50, 75), default: {OFFERS_PER_PAGE}")
+    parser.add_argument("-o", "--output-csv", type=str,
+                        help=f"name of resulting csv file in \"{OUTPUT_DIR}\" directory ")
+    parser.add_argument("-t", "--test", action="store_true", help="run in test mode")
 
-    Spider.root_url = "https://domy.pl/inwestycje/szukaj?ps%5Btype%5D=998&ps%5Badvanced_search%5D=1&ps%5Blocation%5D%5Btype%5D=1&ps%5Bsub_type%5D=1&ps%5Blocation%5D%5Btext_queue%5D%5B%5D=mazowieckie+Warszawa+Mokot%C3%B3w&ps%5Blocation%5D%5Btext_tmp_queue%5D%5B%5D=mazowieckie+Warszawa+Mokot%C3%B3w&ps%5Bliving_area_from%5D=80&ps%5Bcompletion_date_to_month%5D=12&ps%5Bcompletion_date_to_year%5D=2022"
+    args = parser.parse_args()
+
+    if args.test:
+        Spider.root_url = "https://domy.pl/inwestycje/szukaj?ps%5Btype%5D=998&ps%5Badvanced_search%5D=1&ps%5Blocation%5D%5Btype%5D=1&ps%5Bsub_type%5D=1&ps%5Blocation%5D%5Btext_queue%5D%5B%5D=mazowieckie+Warszawa+Mokot%C3%B3w&ps%5Blocation%5D%5Btext_tmp_queue%5D%5B%5D=mazowieckie+Warszawa+Mokot%C3%B3w&ps%5Bliving_area_from%5D=80&ps%5Bcompletion_date_to_month%5D=12&ps%5Bcompletion_date_to_year%5D=2022"
+    else:
+        Spider.root_url = input("Adres startowy: ")
 
     if not Spider.root_url.startswith("https://domy.pl/"):
         print("Niepoprawny adres startowy; powinien zaczynac sie od https://domy.pl/")
         exit(1)
 
+    if args.cores == 0:
+        Spider.cores = multiprocessing.cpu_count()
+    elif args.cores < 0:
+        Spider.cores = max(args.cores + multiprocessing.cpu_count(), 1)
+    else:
+        Spider.cores = args.cores
+
+    print(f"Procesy: {Spider.cores}")
+
     if "&limit" not in Spider.root_url:
-        Spider.root_url += "&limit={0}".format(OFFERS_PER_PAGE)
+        Spider.root_url += f"&limit={args.offers_per_page}"
+    else:
+        Spider.root_url = re.sub(r"&limit=(\d+)", f"&limit={args.offers_per_page}", Spider.root_url)
+
+    if args.output_csv is not None:
+        Spider.csv_file_name = args.output_csv
 
     # print host IP
 
     r = requests.get(CHECKIP_URL)
     soup = BeautifulSoup(r.content, features="html.parser")
 
-    print("Host IP: {0}".format(re.search("\d+\.\d+\.\d+\.\d+", soup.text).group(0)))
+    print("Host IP: {0}".format(re.search(r"\d+\.\d+\.\d+\.\d+", soup.text).group(0)))
 
     # scan root url
 
