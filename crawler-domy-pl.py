@@ -6,6 +6,7 @@ import re
 import requests
 import signal
 from sys import exit
+import time
 
 from bs4 import BeautifulSoup
 import progressbar
@@ -25,6 +26,7 @@ TEST_URL_FILE = "test-url.txt"
 
 class Spider:
     cores = None
+    host_ip = None
     scan_type = None
     max_images_download = 0
     root_url = None
@@ -36,6 +38,7 @@ class Spider:
     first_page = None
     m_manager = None
     m_keyboard_event = None
+    m_cloudflare_event = None
     lo_pages = []
     lo_offers_links = []
     lo_offers_html = []
@@ -48,31 +51,60 @@ class Spider:
     num_downloaded_photos = 0
 
     @classmethod
+    def check_host_ip(cls):
+
+        r, e = requests_get_wrapper(CHECKIP_URL, None)
+        if e is not None or r is None:
+            cls.host_ip = "?.?.?.?"
+        else:
+            soup = BeautifulSoup(r.content, features="html.parser")
+            cls.host_ip = re.search(r"\d+\.\d+\.\d+\.\d+", soup.text).group(0)
+
+    @classmethod
     def scan_root_url(cls):
 
-        r = requests.get(cls.root_url)
-        soup = BeautifulSoup(r.content, features="html.parser")
+        retry_no = 0
 
-        sst = soup.find("span", {'class': 'mi_defaultValue'})
-        if sst is not None:
-            cls.scan_type = sst.text.strip()
+        while retry_no < 3:
+            retry_no += 1
 
-        obj_offers_found = soup.find("h2", {'class': 'offersFound'})
+            r, e = requests_get_wrapper(cls.root_url, cls.m_cloudflare_event)
+            cls.__check_cloudflare_event()
+            # if e is not None:
+            #     print("Error: " + str(e))
+            #     exit(-10)
+            soup = BeautifulSoup(r.content, features="html.parser")
 
-        if obj_offers_found is not None:
+            sst = soup.find("span", {'class': 'mi_defaultValue'})
+            if sst is not None:
+                cls.scan_type = sst.text.strip()
 
-            cls.offers_found = int(obj_offers_found.find("b").text)
-            obj_paginator = soup.find_all("div", {'class': 'paginator'})
+            obj_offers_found = soup.find("h2", {'class': 'offersFound'})
 
-            cls.pages = 1 if obj_paginator == [] else int(obj_paginator[1].find_all("a")[-2].text)
+            if obj_offers_found is not None:
 
-            if cls.pages * OFFERS_PER_PAGE < cls.offers_found:
-                cls.offers_warn = True
-                cls.offers_real = cls.pages * OFFERS_PER_PAGE
+                cls.offers_found = int(obj_offers_found.find("b").text)
+
+                if cls.offers_found == 0: # sometimes webpage returns zero results
+                    time.sleep(3)
+                    continue
+
+                obj_paginator = soup.find_all("div", {'class': 'paginator'})
+
+                cls.pages = 1 if obj_paginator == [] else int(obj_paginator[1].find_all("a")[-2].text)
+
+                if cls.pages * OFFERS_PER_PAGE < cls.offers_found:
+                    cls.offers_warn = True
+                    cls.offers_real = cls.pages * OFFERS_PER_PAGE
+                else:
+                    cls.offers_real = cls.offers_found
+
+                cls.first_page = r.content
+                break
             else:
-                cls.offers_real = cls.offers_found
-
-            cls.first_page = r.content
+                # sometimes webpage returns no results at all
+                time.sleep(3)
+                continue
 
     @classmethod
     def process_first_page(cls):
@@ -93,19 +125,22 @@ class Spider:
         aa_results = []
 
         for i in range(2, cls.pages + 1):
-            aa_results.append(pool.apply_async(mp_collect_remaining_pages, (i, cls.root_url, cls.m_keyboard_event),
+            aa_results.append(pool.apply_async(mp_collect_remaining_pages, (i, cls.root_url, cls.m_keyboard_event,
+                                                                            cls.m_cloudflare_event),
                                                callback=cls.__pb_update))
 
         pool.close()
         pool.join()
 
-        if cls.m_keyboard_event.is_set():
-            exit(-9)
+        cls.__check_keyboard_event()
+        cls.__check_cloudflare_event()
 
         cls.pb.finish()
 
         for result in aa_results:
-            cls.lo_pages.append(result.get())
+            r, e = result.get()
+            if r is not None:
+                cls.lo_pages.append(r.content)
 
         signal.signal(signal.SIGINT, original_sigint_handler)
 
@@ -126,8 +161,7 @@ class Spider:
         pool.close()
         pool.join()
 
-        if cls.m_keyboard_event.is_set():
-            exit(-9)
+        cls.__check_keyboard_event()
 
         cls.pb.finish()
 
@@ -149,18 +183,23 @@ class Spider:
         aa_results = []
 
         for link in cls.lo_offers_links:
-            aa_results.append(pool.apply_async(mp_collect_offers, (link, cls.m_keyboard_event), callback=cls.__pb_update))
+            aa_results.append(pool.apply_async(mp_collect_offers, (link, cls.m_keyboard_event, cls.m_cloudflare_event),
+                                               callback=cls.__pb_update))
 
         pool.close()
         pool.join()
 
-        if cls.m_keyboard_event.is_set():
-            exit(-9)
+        cls.__check_keyboard_event()
+        cls.__check_cloudflare_event()
 
         cls.pb.finish()
 
         for result in aa_results:
-            cls.lo_offers_html.append(result.get())
+            p, e = result.get()
+            if p is not None:
+                link, r = p
+                if r is not None:
+                    cls.lo_offers_html.append((link, r.content))
 
         signal.signal(signal.SIGINT, original_sigint_handler)
 
@@ -181,8 +220,7 @@ class Spider:
         pool.close()
         pool.join()
 
-        if cls.m_keyboard_event.is_set():
-            exit(-9)
+        cls.__check_keyboard_event()
 
         cls.pb.finish()
 
@@ -240,13 +278,14 @@ class Spider:
 
         for offer in cls.lo_offers_objs:
             aa_results.append(pool.apply_async(mp_download_photos, (offer, cls.img_dir_path, cls.max_images_download,
-                                                                    cls.m_keyboard_event), callback=cls.__pb_update))
+                                                                    cls.m_keyboard_event, cls.m_cloudflare_event),
+                                               callback=cls.__pb_update))
 
         pool.close()
         pool.join()
 
-        if cls.m_keyboard_event.is_set():
-            exit(-9)
+        cls.__check_keyboard_event()
+        cls.__check_cloudflare_event()
 
         cls.pb.finish()
 
@@ -260,6 +299,18 @@ class Spider:
         cls.pb_val += 1
         cls.pb.update(cls.pb_val)
 
+    @classmethod
+    def __check_cloudflare_event(cls):
+
+        if cls.m_cloudflare_event.is_set():
+            print("Error: Cloudflare")
+            exit(-10)
+
+    @classmethod
+    def __check_keyboard_event(cls):
+
+        if cls.m_keyboard_event.is_set():
+            exit(-10)
 
 class Offer:
     adm_1 = None
@@ -313,17 +364,46 @@ class Offer:
 
 # ______________________________________________________________________________________________________________________
 
+# https://www.peterbe.com/plog/best-practice-with-retries-with-requests
+def requests_retry_session(
+    retries=3,
+    backoff_factor=0.5,
+    status_forcelist=(403, 404, 500, 502, 504),
+    session=None,
+):
+    session = session or requests.Session()
+    retry = requests.packages.urllib3.util.retry.Retry(
+        total=retries,
+        read=retries,
+        connect=retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=status_forcelist,
+    )
+    adapter = requests.adapters.HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
 
-def mp_collect_remaining_pages(i, root_url, m_keyboard_event):
+def requests_get_wrapper(url, m_cloudflare_event):
+
+    try:
+        r = requests_retry_session().get(url, timeout=5)
+        if m_cloudflare_event is not None and "Cloudflare" in r.text:
+            m_cloudflare_event.set()
+        return (r, None)
+    except requests.exceptions.RequestException as e:
+        return (None, e)
+
+def mp_collect_remaining_pages(i, root_url, m_keyboard_event, m_cloudflare_event):
 
     if not m_keyboard_event.is_set():
         try:
-            r = requests.get(root_url + "&page=" + str(i))
-            return r.content
+            r, e = requests_get_wrapper(root_url + "&page=" + str(i), m_cloudflare_event)
+            return (r, e)
         except KeyboardInterrupt:
             m_keyboard_event.set()
 
-    return None
+    return (None, None)
 
 def mp_parse_pages(r_content, m_keyboard_event):
 
@@ -339,16 +419,17 @@ def mp_parse_pages(r_content, m_keyboard_event):
 
     return None
 
-def mp_collect_offers(link, m_keyboard_event):
+def mp_collect_offers(link, m_keyboard_event, m_cloudflare_event):
 
     if not m_keyboard_event.is_set():
         try:
-            r = requests.get(link)
-            return (link, r.content)
+            r, e = requests_get_wrapper(link, m_cloudflare_event)
+            return ((link, r), e)
         except KeyboardInterrupt:
             m_keyboard_event.set()
 
-    return None
+    return (None, None)
+
 
 def mp_parse_offers(v, m_keyboard_event):
     if not m_keyboard_event.is_set():
@@ -443,7 +524,8 @@ def mp_parse_offers(v, m_keyboard_event):
 
     return None
 
-def mp_download_photos(offer, img_dir_path, max_images_download, m_keyboard_event):
+
+def mp_download_photos(offer, img_dir_path, max_images_download, m_keyboard_event, m_cloudflare_event):
 
     if not m_keyboard_event.is_set():
         try:
@@ -453,12 +535,17 @@ def mp_download_photos(offer, img_dir_path, max_images_download, m_keyboard_even
                 if di >= max_images_download:
                     break
 
-                r = requests.get(link)
-                di += 1
+                r, e = requests_get_wrapper(link, m_cloudflare_event)
+                if m_cloudflare_event.is_set():
+                    return di
+                if e is not None:
+                    continue # TODO
 
-                with open(img_dir_path + "/" + offer.photo_prefix + "_" + str(di) + "." + link.split(".")[-1], 'wb') as f:
-                    for chunk in r:
-                        f.write(chunk)
+                if r is not None and r.headers["Content-Type"].startswith("image/"):
+                    with open(img_dir_path + "/" + offer.photo_prefix + "_" + str(di) + "." + link.split(".")[-1], 'wb') as f:
+                        for chunk in r:
+                            f.write(chunk)
+                    di += 1
 
             return di
         except KeyboardInterrupt:
@@ -538,13 +625,12 @@ if __name__ == '__main__':
 
         Spider.m_manager = multiprocessing.Manager()
         Spider.m_keyboard_event = Spider.m_manager.Event()
+        Spider.m_cloudflare_event = Spider.m_manager.Event()
 
         # print host IP
 
-        r = requests.get(CHECKIP_URL)
-        soup = BeautifulSoup(r.content, features="html.parser")
-
-        print("Host IP: {0}".format(re.search(r"\d+\.\d+\.\d+\.\d+", soup.text).group(0)))
+        Spider.check_host_ip()
+        print(f"Host IP ({CHECKIP_URL}): {Spider.host_ip}")
 
         # scan root url
 
