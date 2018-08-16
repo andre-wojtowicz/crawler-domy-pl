@@ -12,6 +12,8 @@ import progressbar
 
 # ______________________________________________________________________________________________________________________
 
+VERSION = "1808.1"
+
 OUTPUT_DIR = "output"
 OUTPUT_FILE_PFX = str(datetime.datetime.now())[:19].replace(":", "").replace(" ", "_")
 OFFERS_PER_PAGE = 75  # 25, 50, 75
@@ -485,6 +487,8 @@ if __name__ == '__main__':
         parser.add_argument("-t", "--test", action="store_true", help=f"run in test mode and reads url from {TEST_URL_FILE}")
 
         args = parser.parse_args()
+
+        print(VERSION)
 
         if args.test and os.path.isfile(TEST_URL_FILE):
             with open(TEST_URL_FILE, 'r') as f:
