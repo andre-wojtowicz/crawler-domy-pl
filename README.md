@@ -2,4 +2,4 @@
 
 Build:
 
-`> .\venv\Scripts\pyinstaller.exe --clean --onefile --icon=icon.ico --version-file=version.ver .\crawl.py`
+`> .\venv\Scripts\pyinstaller.exe --clean --onefile --icon=icon.ico --version-file=version.ver .\crawler-domy-pl.py`

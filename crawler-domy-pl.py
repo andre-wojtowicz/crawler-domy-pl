@@ -484,11 +484,18 @@ if __name__ == '__main__':
                             help=f"number of offers per page (25, 50, 75), default: {OFFERS_PER_PAGE}")
         parser.add_argument("-o", "--output-csv", type=str,
                             help=f"name of resulting csv file in \"{OUTPUT_DIR}\" directory ")
-        parser.add_argument("-t", "--test", action="store_true", help=f"run in test mode and reads url from {TEST_URL_FILE}")
+        parser.add_argument("-t", "--test", action="store_true",
+                            help=f"run in test mode and reads url from {TEST_URL_FILE}")
+        parser.add_argument("-v", "--version", action="store_true",
+                            help=f"prints program version and exits")
 
         args = parser.parse_args()
 
-        print(VERSION)
+        if args.version:
+            print(VERSION)
+            exit(0)
+
+        print(f"Wersja: {VERSION}")
 
         if args.test and os.path.isfile(TEST_URL_FILE):
             with open(TEST_URL_FILE, 'r') as f:

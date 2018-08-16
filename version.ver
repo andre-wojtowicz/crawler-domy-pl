@@ -17,12 +17,12 @@ VSVersionInfo(
         [StringStruct(u'CompanyName', u''),
         StringStruct(u'FileDescription', u'Crawler domy.pl'),
         StringStruct(u'FileVersion', u'1808.1'),
-        StringStruct(u'InternalName', u'crawler'),
+        StringStruct(u'InternalName', u'crawler-domy-pl'),
         StringStruct(u'LegalCopyright', u''),
-        StringStruct(u'OriginalFilename', u'crawler.exe'),
+        StringStruct(u'OriginalFilename', u'crawler-domy-pl.exe'),
         StringStruct(u'ProductName', u''),
         StringStruct(u'ProductVersion', u'1808.1')])
       ]), 
-    VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
+    VarFileInfo([VarStruct(u'Translation', [1045, 1200])])
   ]
 )
