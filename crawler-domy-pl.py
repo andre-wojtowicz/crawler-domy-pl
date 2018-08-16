@@ -502,8 +502,8 @@ def mp_parse_offers(v, m_keyboard_event):
 
             google_maps = soup.find("div", {"class" : "GoogleMap"})
 
-            offer.gps_x = google_maps.get("data-lat") if google_maps is not None else None
-            offer.gps_y = google_maps.get("data-lng") if google_maps is not None else None
+            offer.gps_x = google_maps.get("data-lng") if google_maps is not None else None
+            offer.gps_y = google_maps.get("data-lat") if google_maps is not None else None
 
             offer.photo_prefix = link.split("/")[-1]
 
