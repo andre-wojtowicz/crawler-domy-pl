@@ -289,7 +289,8 @@ class Spider:
 
         cls.pb.finish()
 
-        cls.num_downloaded_photos = sum([i.get() for i in aa_results])
+        # cls.num_downloaded_photos = sum([i.get() for i in aa_results])
+        cls.num_downloaded_photos = len([name for name in os.listdir(cls.img_dir_path)])
 
         signal.signal(signal.SIGINT, original_sigint_handler)
 
