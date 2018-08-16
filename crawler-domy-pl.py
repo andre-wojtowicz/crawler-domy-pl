@@ -7,13 +7,14 @@ import requests
 import signal
 from sys import exit
 import time
+import xlsxwriter
 
 from bs4 import BeautifulSoup
 import progressbar
 
 # ______________________________________________________________________________________________________________________
 
-VERSION = "1808.1"
+VERSION = "1808.2"
 
 OUTPUT_DIR = "output"
 OUTPUT_FILE_PFX = str(datetime.datetime.now())[:19].replace(":", "").replace(" ", "_")
@@ -45,8 +46,8 @@ class Spider:
     lo_offers_objs = []
     pb = None
     pb_val = 0
-    csv_file_name = None
-    csv_file_path = None
+    output_file_name = None
+    output_file_path = None
     img_dir_path = None
     num_downloaded_photos = 0
 
@@ -230,7 +231,7 @@ class Spider:
         signal.signal(signal.SIGINT, original_sigint_handler)
 
     @classmethod
-    def save_csv(cls):
+    def save_xlsx(cls):
 
         try:
             os.mkdir(OUTPUT_DIR)
@@ -245,23 +246,25 @@ class Spider:
         elif Spider.scan_type == "Mieszkania":
             stype = "mieszkania"
 
-        cls.csv_file_name = f"{OUTPUT_FILE_PFX}_{stype}.csv" if cls.csv_file_name is None else cls.csv_file_name
+        cls.output_file_name = f"{OUTPUT_FILE_PFX}_{stype}.xlsx" if cls.output_file_name is None else cls.output_file_name
+        cls.output_file_path = f"{OUTPUT_DIR}/{cls.output_file_name}"
 
-        cls.csv_file_path = f"{OUTPUT_DIR}/{cls.csv_file_name}"
+        workbook = xlsxwriter.Workbook(cls.output_file_path)
+        worksheet = workbook.add_worksheet()
 
-        csv_header = '"Lp";"Adm1";"Adm2";"Ulica";"Rynek pierwotny";"Cena";"Powierzchnia użytkowa";"Powierzchnia mieszkalna";"Liczba pokoi";"Rok budowy";"Piętro";"Typ budynku";"Winda";"Miejsca parkingowe";"Stan budynku";"Stan nieruchomości";"GPSX";"GPSY";"Url";"Zdjęcie"'
+        xlsx_header = ["Lp"] + Offer.xlsx_header()
 
-        with open(cls.csv_file_path, mode="w", encoding="utf8") as f:
+        worksheet.write_row(0, 0, xlsx_header)
 
-            f.write(csv_header + '\n')
+        for i, o in enumerate(cls.lo_offers_objs):
+            worksheet.write_row(i + 1, 0, [i + 1] + o.xlsx_row())
 
-            for i, o in enumerate(cls.lo_offers_objs):
-                f.write(o.csv_line(i + 1) + '\n')
+        workbook.close()
 
     @classmethod
     def download_photos(cls):
 
-        cls.img_dir_path = OUTPUT_DIR + "/" + cls.csv_file_name.split(".")[0]
+        cls.img_dir_path = OUTPUT_DIR + "/" + cls.output_file_name.split(".")[0]
 
         try:
             os.mkdir(cls.img_dir_path)
@@ -338,32 +341,33 @@ class Offer:
     def __init__(self, url):
         self.url = url
 
-    def csv_line(self, i):
+    @staticmethod
+    def xlsx_header():
+        return ["Adm1", "Adm2", "Ulica", "Rynek pierwotny", "Cena", "Powierzchnia użytkowa", "Powierzchnia mieszkalna",
+                "Liczba pokoi", "Rok budowy", "Piętro", "Typ budynku", "Winda", "Miejsca parkingowe", "Stan budynku",
+                "Stan nieruchomości", "GPSX", "GPSY", "Url", "Zdjęcie"]
 
-        line = '"' + str(i) + '";'
-        line += '"' + (self.adm_1 if self.adm_1 is not None else '') + '";'
-        line += '"' + (self.adm_2 if self.adm_2 is not None else '') + '";'
-        line += '"' + (self.street if self.street is not None else '') + '";'
-        line += '"' + (self.primary_market if self.primary_market is not None else '') + '";'
-        line += '"' + (self.price if self.price is not None else '') + '";'
-        line += '"' + (self.area if self.area is not None else '') + '";'
-        line += '"' + (self.living_area if self.living_area is not None else '') + '";'
-        line += '"' + (self.rooms if self.rooms is not None else '') + '";'
-        line += '"' + (self.year_of_construction if self.year_of_construction is not None else '') + '";'
-        line += '"' + (self.floor if self.floor is not None else '') + '";'
-        line += '"' + (self.type_of_building if self.type_of_building is not None else '') + '";'
-        line += '"' + (self.lift if self.lift is not None else '') + '";'
-        line += '"' + (self.parking_space if self.parking_space is not None else '') + '";'
-        line += '"' + (self.state_of_building if self.state_of_building is not None else '') + '";'
-        line += '"' + (self.state_of_property if self.state_of_property is not None else '') + '";'
-        line += '"' + (self.gps_x if self.gps_x is not None else '') + '";'
-        line += '"' + (self.gps_y if self.gps_y is not None else '') + '";'
-        line += '"' + (self.url if self.url is not None else '') + '";'
-        line += '"' + (self.photo_prefix if self.photo_prefix is not None else '') + '"'
+    def xlsx_row(self):
 
-        return line
+        gps_x = float(self.gps_x) if is_gps_coordinate(self.gps_x) else None
+        gps_y = float(self.gps_y) if is_gps_coordinate(self.gps_y) else None
+
+        return [self.adm_1, self.adm_2, self.street, self.primary_market, self.price, self.area, self.living_area,
+                self.rooms, self.year_of_construction, self.floor, self.type_of_building, self.lift, self.parking_space,
+                self.state_of_building, self.state_of_property, gps_x, gps_y, self.url, self.photo_prefix]
 
 # ______________________________________________________________________________________________________________________
+
+def is_gps_coordinate(val):
+    try:
+        float(val)
+    except ValueError:
+        return False
+
+    if re.match(r"^(\d+)\.(\d+)$", val) is None:
+        return False
+
+    return True
 
 # https://www.peterbe.com/plog/best-practice-with-retries-with-requests
 def requests_retry_session(
@@ -570,8 +574,8 @@ if __name__ == '__main__':
                             help=f"maximum number of images to download, default: {MAX_IMAGES_DOWNLOAD}")
         parser.add_argument("-p", "--offers-per-page", type=int, default=75,
                             help=f"number of offers per page (25, 50, 75), default: {OFFERS_PER_PAGE}")
-        parser.add_argument("-o", "--output-csv", type=str,
-                            help=f"name of resulting csv file in \"{OUTPUT_DIR}\" directory ")
+        parser.add_argument("-o", "--output-xlsx", type=str,
+                            help=f"name of resulting xlsx file in \"{OUTPUT_DIR}\" directory ")
         parser.add_argument("-t", "--test", action="store_true",
                             help=f"run in test mode and reads url from {TEST_URL_FILE}")
         parser.add_argument("-v", "--version", action="store_true",
@@ -610,8 +614,8 @@ if __name__ == '__main__':
 
         print(f"Limit pobieranych zdjęć z ogłoszenia: {Spider.max_images_download}")
 
-        if args.output_csv is not None:
-            Spider.csv_file_name = args.output_csv
+        if args.output_xlsx is not None:
+            Spider.output_file_name = args.output_xlsx
 
         # configure multiprocessing
 
@@ -670,8 +674,8 @@ if __name__ == '__main__':
         print("Opracowane ogłoszenia: {0}".format(len(Spider.lo_offers_objs)))
 
         print("Zapisywanie ogłoszeń...")
-        Spider.save_csv()
-        print(f"Plik: {Spider.csv_file_path}")
+        Spider.save_xlsx()
+        print(f"Plik: {Spider.output_file_path}")
 
         if Spider.max_images_download > 0:
             print("Pobieranie zdjęć z ogłoszeń:")
