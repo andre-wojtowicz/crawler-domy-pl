@@ -476,19 +476,72 @@ def mp_parse_offers(v, m_keyboard_event):
 
             for v in h_params:
                 if "Cena:" in v.text:
-                    offer.price = v.find("strong").text.replace(u'\xa0', u' ')
+                    tmp = v.find("strong").text.replace(u'\xa0', u' ')
+                    tmp = tmp.replace(" ", "")
+                    res = re.search(r"^(\d+)(,(\d+))?", tmp)
+                    if res is not None:
+                        v = res.group(0)
+                        v = v.replace(",", ".")
+                        try:
+                            v = float(v)
+                            offer.price = v
+                        except ValueError:
+                            offer.price = None
+                    else:
+                        offer.price = None
                 elif "Rynek pierwotny:" in v.text:
                     offer.primary_market = v.find("strong").text
                 elif "Powierzchnia użytkowa:" in v.text:
-                    offer.area = v.find("strong").text
+                    tmp = v.find("strong").text
+                    tmp = tmp.replace(" ", "")
+                    res = re.search(r"^(\d+)(,(\d+))?", tmp)
+                    if res is not None:
+                        v = res.group(0)
+                        v = v.replace(",", ".")
+                        try:
+                            v = float(v)
+                            offer.area = v
+                        except ValueError:
+                            offer.area = None
+                    else:
+                        offer.area = None
                 elif "Powierzchnia mieszkalna:" in v.text:
-                    offer.living_area = v.find("strong").text
+                    tmp = v.find("strong").text
+                    tmp = tmp.replace(" ", "")
+                    res = re.search(r"^(\d+)(,(\d+))?", tmp)
+                    if res is not None:
+                        v = res.group(0)
+                        v = v.replace(",", ".")
+                        try:
+                            v = float(v)
+                            offer.living_area = v
+                        except ValueError:
+                            offer.living_area = None
+                    else:
+                        offer.living_area = None
                 elif "Liczba pokoi:" in v.text:
-                    offer.rooms = v.find("strong").text
+                    tmp = v.find("strong").text
+                    res = re.search(r"\d+", tmp)
+                    if res is not None:
+                        offer.rooms = int(res.group(0))
+                    else:
+                        offer.rooms = None
                 elif "Rok budowy:" in v.text:
-                    offer.year_of_construction = v.find("strong").text
+                    tmp = v.find("strong").text
+                    res = re.search(r"\d\d\d\d", tmp)
+                    if res is not None:
+                        offer.year_of_construction = int(res.group(0))
+                    else:
+                        offer.year_of_construction = None
                 elif "Piętro:" in v.text:
-                    offer.floor = v.find("strong").text
+                    tmp = v.find("strong").text
+                    tmp = tmp.lower()
+                    tmp = tmp.replace("parter", "0")
+                    res = re.search(r"\d+", tmp)
+                    if res is not None:
+                        offer.floor = int(res.group(0))
+                    else:
+                        offer.floor = None
                 elif "Typ budynku:" in v.text:
                     offer.type_of_building = v.find("strong").text
                 elif "Winda:" in v.text:
